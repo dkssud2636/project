@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>로그인 / 회원가입</title>
+    <style>
+        body { background: #f7f9fc; font-family: 'Malgun Gothic', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .auth-container { background: white; width: 360px; padding: 30px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
+        .tabs { display: flex; margin-bottom: 25px; border-bottom: 2px solid #eee; }
+        .tab { flex: 1; text-align: center; padding: 10px; cursor: pointer; color: #aaa; font-weight: bold; }
+        .tab.active { color: #ff6b6b; border-bottom: 2px solid #ff6b6b; }
+        .form-group { display: flex; flex-direction: column; gap: 14px; }
+        .form-group input { padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+        .form-group button { background: #ff6b6b; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .form-group button:hover { background: #ee5253; }
+        .toggle-form { display: none; }
+        .toggle-form.active { display: flex; }
+        .logo { text-align: center; font-size: 24px; font-weight: bold; color: #ff6b6b; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="auth-container">
+        <div class="logo">📍 맛集 플랫폼</div>
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('login')">로그인</div>
+            <div class="tab" onclick="switchTab('register')">회원가입</div>
+        </div>
+
+        <div id="login-form" class="form-group toggle-form active">
+            <input type="text" id="login-id" placeholder="아이디" required>
+            <input type="password" id="login-pw" placeholder="비밀번호" required>
+            <button onclick="handleLogin()">로그인</button>
+        </div>
+
+        <div id="register-form" class="form-group toggle-form">
+            <input type="text" id="reg-id" placeholder="사용할 아이디" required>
+            <input type="password" id="reg-pw" placeholder="비밀번호" required>
+            <input type="text" id="reg-name" placeholder="이름 (닉네임)" required>
+            <button onclick="handleRegister()">가입하기</button>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(type) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.toggle-form').forEach(f => f.classList.remove('active'));
+            
+            if(type === 'login') {
+                document.querySelectorAll('.tab')[0].classList.add('active');
+                document.getElementById('login-form').classList.add('active');
+            } else {
+                document.querySelectorAll('.tab')[1].classList.add('active');
+                document.getElementById('register-form').classList.add('active');
+            }
+        }
+
+        async function handleLogin() {
+            const userId = document.getElementById('login-id').value;
+            const password = document.getElementById('login-pw').value;
+
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, password })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert(`환영합니다, ${data.user.name}님!`);
+                location.href = '/'; // 메인 지도로 이동
+            } else {
+                alert(data.error);
+            }
+        }
+
+        async function handleRegister() {
+            const userId = document.getElementById('reg-id').value;
+            const password = document.getElementById('reg-pw').value;
+            const name = document.getElementById('reg-name').value;
+
+            const res = await fetch('/api/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, password, name })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert('회원가입이 완료되었습니다! 로그인을 해주세요.');
+                switchTab('login');
+            } else {
+                alert(data.error);
+            }
+        }
+    </script>
+</body>
+</html>

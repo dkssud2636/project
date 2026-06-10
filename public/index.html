@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>위치기반 맛집 플랫폼</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; font-family: 'Malgun Gothic', sans-serif; }
+        header { background: #ff6b6b; color: white; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; position: relative; display: flex; justify-content: space-between; align-items: center; padding-left: 30px; padding-right: 30px;}
+        
+        #auth-status-box { color: white; font-size: 14px; display: flex; gap: 10px; align-items: center; }
+        #auth-status-box button { background: rgba(255,255,255,0.2); border: 1px solid white; color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+        #auth-status-box button:hover { background: white; color: #ff6b6b; }
+
+        #register-box { background: white; color: #333; padding: 12px; border-radius: 8px; font-size: 13px; display: flex; gap: 8px; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.2); }
+        #register-box input, #register-box select { padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+        #register-box button { background: #ff6b6b; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+
+        #container { display: flex; height: calc(100vh - 60px); }
+        #sidebar { width: 320px; background: #f8f9fa; border-right: 1px solid #ddd; padding: 20px; display: flex; flex-direction: column; }
+        .region-section { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px dashed #ddd; }
+        .region-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #333; }
+        .btn-group { display: flex; flex-wrap: wrap; gap: 8px; }
+        .region-btn { background: white; border: 1px solid #ff6b6b; color: #ff6b6b; padding: 6px 12px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: bold; }
+        .region-btn:hover { background: #ff6b6b; color: white; }
+        
+        #store-list-container { flex: 1; overflow-y: auto; }
+        .store-item { background: white; padding: 15px; margin-bottom: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .store-name { font-weight: bold; color: #333; font-size: 16px; }
+        .store-cate { color: #ff6b6b; font-size: 12px; margin-left: 5px; }
+        #map { flex: 1; height: 100%; cursor: crosshair; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>전국 맛집 지도 플랫폼</div>
+        
+        <div id="auth-status-box">
+            <span id="user-welcome">로딩 중...</span>
+            <button id="auth-btn" onclick="handleAuthAction()">로그인</button>
+        </div>
+
+        <div id="register-box">
+            <span style="font-weight: bold; color: #ff6b6b;">[맛집 간편 등록]</span>
+            <input type="text" id="store-name" placeholder="맛집 이름 입력" required>
+            <select id="store-cate">
+                <option value="한식">한식</option><option value="일식">일식</option>
+                <option value="중식">중식</option><option value="양식">양식</option><option value="카페">카페</option>
+            </select>
+            <input type="text" id="store-addr" placeholder="지번 또는 도로명 주소">
+            <input type="text" id="store-coords" placeholder="지도를 클릭하면 좌표가 자동 입력됩니다" size="30" readonly style="background: #eee;">
+            <button onclick="submitStore()">등록하기</button>
+        </div>
+    </header>
+    
+    <div id="container">
+        <div id="sidebar">
+            <div class="region-section">
+                <div class="region-title">🗺️ 전국 주요 지역 검색</div>
+                <div class="btn-group">
+                    <button class="region-btn" onclick="moveToRegion(35.1578, 129.0591)">부산 (서면)</button>
+                    <button class="region-btn" onclick="moveToRegion(37.5665, 126.9780)">서울 (시청)</button>
+                    <button class="region-btn" onclick="moveToRegion(35.8647, 128.5933)">대구 (반월당)</button>
+                    <button class="region-btn" onclick="moveToRegion(36.3323, 127.4342)">대전 (대전역)</button>
+                    <button class="region-btn" onclick="moveToRegion(35.1511, 126.8524)">광주 (상무역)</button>
+                </div>
+            </div>
+            <div class="region-title">🍽️ 주변 추천 맛집</div>
+            <div id="store-list-container">
+                <div id="store-list">로딩 중...</div>
+            </div>
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        let selectedLng = null;
+        let selectedLat = null;
+        let clickMarker = null; 
+        let isLoggedIn = false; // 로그인 상태 플래그
+
+        // 페이지 로드 시 백엔드에 로그인 상태 질의
+        async function checkLoginStatus() {
+            const res = await fetch('/api/auth/status');
+            const data = await res.json();
+            const welcomeEl = document.getElementById('user-welcome');
+            const btnEl = document.getElementById('auth-btn');
+
+            if (data.loggedIn) {
+                isLoggedIn = true;
+                welcomeEl.innerText = `${data.user.name}님`;
+                btnEl.innerText = '로그아웃';
+            } else {
+                isLoggedIn = false;
+                welcomeEl.innerText = '로그인이 필요합니다.';
+                btnEl.innerText = '로그인';
+            }
+        }
+
+        async function handleAuthAction() {
+            if (isLoggedIn) {
+                // 로그아웃 요청
+                const res = await fetch('/api/auth/logout', { method: 'POST' });
+                if (res.ok) {
+                    alert('로그아웃 되었습니다.');
+                    location.reload();
+                }
+            } else {
+                // 로그인 페이지로 슝
+                location.href = '/login.html';
+            }
+        }
+
+        const map = L.map('map').setView([37.5665, 126.9780], 13);
+        L.tileLayer('https://xdworld.vworld.kr/2d/Base/service/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; Vworld' }).addTo(map);
+
+        let markers = [];
+
+        async function loadNearbyStores() {
+            try {
+                const center = map.getCenter();
+                const response = await fetch(`/api/stores/nearby?lng=${center.lng}&lat=${center.lat}`); 
+                const stores = await response.json();
+                const listEl = document.getElementById('store-list');
+                listEl.innerHTML = ''; 
+                markers.forEach(m => map.removeLayer(m));
+                markers = []; 
+
+                if (stores.length === 0) {
+                    listEl.innerHTML = '<div style="padding:10px; color:#999; font-size: 13px;">주변에 맛집이 없습니다.</div>';
+                    return;
+                }
+
+                stores.forEach(store => {
+                    const [storeLng, storeLat] = store.location.coordinates;
+                    const item = document.createElement('div');
+                    item.className = 'store-item';
+                    item.innerHTML = `<span class="store-name">${store.name}</span><span class="store-cate">${store.category || ''}</span><p style="margin:5px 0 0; font-size:13px; color:#666;">${store.address}</p>`;
+                    listEl.appendChild(item);
+
+                    const marker = L.marker([storeLat, storeLng]).addTo(map);
+                    marker.bindPopup(`<b>${store.name}</b><br><span style="color:#ff6b6b;">${store.category}</span>`);
+                    markers.push(marker);
+                });
+            } catch (err) { console.error(err); }
+        }
+
+        function moveToRegion(lat, lng) {
+            map.flyTo([lat, lng], 13, { animate: true, duration: 1.5 });
+            setTimeout(loadNearbyStores, 1500);
+        }
+
+        map.on('click', function(e) {
+            selectedLat = e.latlng.lat; selectedLng = e.latlng.lng;
+            document.getElementById('store-coords').value = `경도: ${selectedLng.toFixed(4)}, 위도: ${selectedLat.toFixed(4)}`;
+            if (clickMarker) map.removeLayer(clickMarker);
+            clickMarker = L.circleMarker([selectedLat, selectedLng], {color: 'red', radius: 8}).addTo(map);
+        });
+
+        async function submitStore() {
+            // 🛠️ 가드 코딩: 로그인 안 한 유저는 등록 거부!
+            if (!isLoggedIn) {
+                alert('맛집 등록은 로그인 후에 이용 가능합니다');
+                location.href = '/login.html';
+                return;
+            }
+
+            const name = document.getElementById('store-name').value;
+            const category = document.getElementById('store-cate').value;
+            const address = document.getElementById('store-addr').value;
+
+            if (!name || !address || !selectedLng || !selectedLat) {
+                alert('모든 정보와 지도 클릭 좌표를 확인해 주세요'); return;
+            }
+
+            try {
+                const response = await fetch('/api/stores', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, category, address, longitude: selectedLng, latitude: selectedLat })
+                });
+                if (response.ok) {
+                    alert('맛집 등록 완료');
+                    document.getElementById('store-name').value = ''; document.getElementById('store-addr').value = ''; document.getElementById('store-coords').value = '';
+                    if (clickMarker) map.removeLayer(clickMarker);
+                    loadNearbyStores();
+                }
+            } catch (err) { console.error(err); }
+        }
+
+        // 초기 기동 프로세스
+        checkLoginStatus();
+        loadNearbyStores();
+        map.on('dragend', loadNearbyStores);
+        map.on('zoomend', loadNearbyStores);
+    </script>
+</body>
+</html>
