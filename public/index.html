@@ -80,36 +80,35 @@
         let selectedLng = null;
         let selectedLat = null;
         let clickMarker = null; 
-        let isLoggedIn = false; // 로그인 상태 플래그
+        let isLoggedIn = false; 
 
-        // 페이지 로드 시 백엔드에 로그인 상태 질의
         async function checkLoginStatus() {
-            const res = await fetch('/api/auth/status');
-            const data = await res.json();
-            const welcomeEl = document.getElementById('user-welcome');
-            const btnEl = document.getElementById('auth-btn');
+            try {
+                const res = await fetch('/api/auth/status');
+                const data = await res.json();
+                const welcomeEl = document.getElementById('user-welcome');
+                const btnEl = document.getElementById('auth-btn');
 
-            if (data.loggedIn) {
-                isLoggedIn = true;
-                welcomeEl.innerText = `${data.user.name}님`;
-                btnEl.innerText = '로그아웃';
-            } else {
-                isLoggedIn = false;
-                welcomeEl.innerText = '로그인이 필요합니다.';
-                btnEl.innerText = '로그인';
-            }
+                if (data.loggedIn) {
+                    isLoggedIn = true;
+                    welcomeEl.innerText = `${data.user.name}님`;
+                    btnEl.innerText = '로그아웃';
+                } else {
+                    isLoggedIn = false;
+                    welcomeEl.innerText = '로그인이 필요합니다.';
+                    btnEl.innerText = '로그인';
+                }
+            } catch (err) { console.error(err); }
         }
 
         async function handleAuthAction() {
             if (isLoggedIn) {
-                // 로그아웃 요청
                 const res = await fetch('/api/auth/logout', { method: 'POST' });
                 if (res.ok) {
                     alert('로그아웃 되었습니다.');
                     location.reload();
                 }
             } else {
-                // 로그인 페이지로 슝
                 location.href = '/login.html';
             }
         }
@@ -129,7 +128,7 @@
                 markers.forEach(m => map.removeLayer(m));
                 markers = []; 
 
-                if (stores.length === 0) {
+                if (!Array.isArray(stores) || stores.length === 0) {
                     listEl.innerHTML = '<div style="padding:10px; color:#999; font-size: 13px;">주변에 맛집이 없습니다.</div>';
                     return;
                 }
@@ -161,7 +160,6 @@
         });
 
         async function submitStore() {
-            // 🛠️ 가드 코딩: 로그인 안 한 유저는 등록 거부!
             if (!isLoggedIn) {
                 alert('맛집 등록은 로그인 후에 이용 가능합니다');
                 location.href = '/login.html';
@@ -182,20 +180,31 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, category, address, longitude: selectedLng, latitude: selectedLat })
                 });
+                
                 if (response.ok) {
                     alert('맛집 등록 완료');
                     document.getElementById('store-name').value = ''; document.getElementById('store-addr').value = ''; document.getElementById('store-coords').value = '';
                     if (clickMarker) map.removeLayer(clickMarker);
                     loadNearbyStores();
+                } else {
+                    const errData = await response.json();
+                    alert(errData.error || '등록 실패');
                 }
             } catch (err) { console.error(err); }
+        }
+
+        // 🛠️ 지도를 움직일 때 과도한 연속 API 요청을 방지하는 디바운스(Debounce) 안전장치 추가
+        let eventTimer;
+        function debounceLoadStores() {
+            clearTimeout(eventTimer);
+            eventTimer = setTimeout(loadNearbyStores, 400); // 0.4초 딜레이 후 실행
         }
 
         // 초기 기동 프로세스
         checkLoginStatus();
         loadNearbyStores();
-        map.on('dragend', loadNearbyStores);
-        map.on('zoomend', loadNearbyStores);
+        map.on('dragend', debounceLoadStores);
+        map.on('zoomend', debounceLoadStores);
     </script>
 </body>
 </html>
